@@ -1,31 +1,31 @@
 import multer from 'multer';
 import path from 'path';
-import fs from 'fs';
 import { Request } from 'express';
+import { v2 as cloudinary } from 'cloudinary';
+import { CloudinaryStorage } from 'multer-storage-cloudinary';
 
-const destinosPath = path.join(process.cwd(), 'uploads', 'destinos');
-const eventsPath = path.join(process.cwd(), 'uploads', 'events');
+cloudinary.config({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key:    process.env.CLOUDINARY_API_KEY,
+    api_secret: process.env.CLOUDINARY_API_SECRET,
+});
 
-if (!fs.existsSync(destinosPath)) {
-    fs.mkdirSync(destinosPath, { recursive: true });
-}
+const storage = new CloudinaryStorage({
+    cloudinary,
+    params: (req: Request, file: Express.Multer.File) => {
+        const folder = req.baseUrl.includes('/events')
+            ? 'uteq/events'
+            : 'uteq/destinos';
 
-if (!fs.existsSync(eventsPath)) {
-    fs.mkdirSync(eventsPath, { recursive: true });
-}
+        const uniqueName = Date.now() + '-' + Math.round(Math.random() * 1e9);
 
-const storage = multer.diskStorage({
-    destination: (req: Request, file: Express.Multer.File, cb) => {
-        if (req.baseUrl.includes('/events')) {
-            cb(null, 'uploads/events/');
-        } else {
-            cb(null, 'uploads/destinos/');
-        }
+        return {
+            folder,
+            public_id: uniqueName,
+            allowed_formats: ['jpeg', 'jpg', 'png', 'gif', 'webp'],
+            transformation: [{ quality: 'auto', fetch_format: 'auto' }],
+        };
     },
-    filename: (req: Request, file: Express.Multer.File, cb) => {
-        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-        cb(null, uniqueSuffix + path.extname(file.originalname));
-    }
 });
 
 const fileFilter = (req: Request, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
@@ -41,9 +41,9 @@ const fileFilter = (req: Request, file: Express.Multer.File, cb: multer.FileFilt
 };
 
 export const upload = multer({
-    storage: storage,
-    limits: {
-        fileSize: 5 * 1024 * 1024 // 5MB
-    },
-    fileFilter: fileFilter
+    storage,
+    limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
+    fileFilter,
 });
+
+export { cloudinary };
