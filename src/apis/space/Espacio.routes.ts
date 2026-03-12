@@ -1,5 +1,5 @@
 import { Router } from "express";
-import * as espacioController from "./Espacio.controller";
+import * as espacioController from "./Espacio.controller.js";
 
 const router = Router();
 
@@ -9,10 +9,10 @@ router.get("/", espacioController.getEspacios);
 // GET /api/espacios/:id
 router.get("/:id", espacioController.getEspacioById);
 
-// GET /api/espacios/destino/:destinoId  → todos los espacios de un destino
+// GET /api/espacios/destino/:destinoId
 router.get("/destino/:destinoId", espacioController.getEspaciosByDestino);
 
-// GET /api/espacios/destino/:destinoId/disponibles  → solo los disponibles
+// GET /api/espacios/destino/:destinoId/disponibles
 router.get("/destino/:destinoId/disponibles", espacioController.getEspaciosDisponiblesByDestino);
 
 // POST /api/espacios
@@ -21,7 +21,7 @@ router.post("/", espacioController.createEspacio);
 // PUT /api/espacios/:id
 router.put("/:id", espacioController.updateEspacio);
 
-// PATCH /api/espacios/:id/ocupado  → toggle ocupado/disponible
+// PATCH /api/espacios/:id/ocupado
 router.patch("/:id/ocupado", espacioController.toggleOcupado);
 
 // DELETE /api/espacios/:id
