@@ -31,4 +31,4 @@ const MostVisitedSchema = new Schema<IMostVisited>({
     }
 });
 
-export default mongoose.model<IMostVisited>('MostVisited', MostVisitedSchema);
+export default mongoose.model<IMostVisited>('top5_lugares', MostVisitedSchema);
