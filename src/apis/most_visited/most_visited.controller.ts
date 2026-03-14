@@ -1,5 +1,5 @@
 
-import { findAllMostvisited } from "./most_visited.service";
+import { findAllMostvisited } from "./most_visited.service.js";
 
 export const getMostVisited = async () => {
     try {
