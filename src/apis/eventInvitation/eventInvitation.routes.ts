@@ -23,7 +23,8 @@ router.post(
   authenticateToken,
   registerToEvent
 );
-
+// Tickets del usuario (requiere autenticación)
+router.get('/my-tickets', authenticateToken, getMyTickets);
 // Crear invitaciones masivas (requiere autenticación y probablemente permisos de admin)
 router.post('/event/:eventoId/create', authenticateToken, createInvitations);
 
@@ -55,7 +56,6 @@ router.patch('/:id/attendance', authenticateToken, markAttendance);
 router.patch('/:id/regenerate-qr', authenticateToken, regenerateQR);
 
 
-router.get('/my-tickets', authenticateToken, getMyTickets);
 
 
 export default router;
