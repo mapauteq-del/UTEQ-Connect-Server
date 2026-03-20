@@ -10,7 +10,8 @@ import {
   respondToInvitation,
   markAttendance,
   regenerateQR,
-  registerToEvent
+  registerToEvent,
+  getMyTickets
 } from './eventInvitation.controller.js';
 import { authenticateToken } from '../middleware/auth.middleware.js';
 
@@ -52,5 +53,9 @@ router.patch('/:id/attendance', authenticateToken, markAttendance);
 
 // Regenerar QR (requiere autenticación)
 router.patch('/:id/regenerate-qr', authenticateToken, regenerateQR);
+
+
+router.get('/my-tickets', authenticateToken, getMyTickets);
+
 
 export default router;
