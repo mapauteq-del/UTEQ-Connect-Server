@@ -1,4 +1,4 @@
-import * as espacioService from "./Espacio.service";
+import * as espacioService from "./Espacio.service.js";
 export const getEspacios = async (req, res) => {
     try {
         const espacios = await espacioService.findAllEspacios();

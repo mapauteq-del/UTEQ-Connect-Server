@@ -1,11 +1,11 @@
 import { Router } from "express";
-import * as espacioController from "./Espacio.controller";
+import * as espacioController from "./Espacio.controller.js";
 
 const router = Router();
 
 // GET /api/espacios
 router.get("/", espacioController.getEspacios);
-
+    
 // GET /api/espacios/:id
 router.get("/:id", espacioController.getEspacioById);
 
