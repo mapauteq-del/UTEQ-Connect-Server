@@ -9,3 +9,4 @@ router.post('/register-admin', registerAdmin);   // POST /auth/register-admin â†
 router.post('/login', login);        // POST /auth/login
 
 export default router;
+
