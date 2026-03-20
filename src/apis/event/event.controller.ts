@@ -44,12 +44,14 @@ export const createEvent = async (req: Request, res: Response) => {
     if (req.file) {
       imagePath = `uploads/events/${req.file.filename}`;
     }
-    
+
     const eventData = {
       ...req.body,
-      image: imagePath
+      creadoPor: req.user?._id,
+      ...(req.file ? { image: `uploads/events/${req.file.filename}` } : {})
     };
-    
+
+
     const event = await eventService.createEvent(eventData);
     res.status(201).json({
       success: true,
@@ -67,12 +69,12 @@ export const createEvent = async (req: Request, res: Response) => {
 export const updateEvent = async (req: Request, res: Response) => {
   try {
     const id = req.params.id as string;
-    
+
     const updateData: any = { ...req.body };
-    
+
     if (req.file) {
       updateData.image = `uploads/events/${req.file.filename}`;
-      
+
       // Eliminar imagen anterior
       const oldEvent = await eventService.findEventById(id);
       if (oldEvent?.image) {
@@ -84,7 +86,7 @@ export const updateEvent = async (req: Request, res: Response) => {
         }
       }
     }
-    
+
     const event = await eventService.updateEvent(id, updateData);
     if (!event) {
       return res.status(404).json({
@@ -202,24 +204,24 @@ export const getEventsByDestino = async (req: Request, res: Response) => {
 export const uploadEventImage = async (req: Request, res: Response) => {
   try {
     const id = req.params.id as string;
-    
+
     if (!req.file) {
       return res.status(400).json({
         success: false,
         error: 'No se ha proporcionado ninguna imagen'
       });
     }
-    
+
     const imagePath = `uploads/events/${req.file.filename}`;
     const event = await eventService.updateEventImage(id, imagePath);
-    
+
     if (!event) {
       return res.status(404).json({
         success: false,
         error: 'Evento no encontrado'
       });
     }
-    
+
     res.json({
       success: true,
       data: event,
@@ -237,14 +239,14 @@ export const deleteEventImage = async (req: Request, res: Response) => {
   try {
     const id = req.params.id as string;
     const event = await eventService.deleteEventImage(id);
-    
+
     if (!event) {
       return res.status(404).json({
         success: false,
         error: 'Evento no encontrado'
       });
     }
-    
+
     res.json({
       success: true,
       data: event
@@ -254,5 +256,34 @@ export const deleteEventImage = async (req: Request, res: Response) => {
       success: false,
       error: error instanceof Error ? error.message : 'Error desconocido'
     });
+  }
+};
+
+
+
+/* ── Reasignación atómica (solo superadmin) ── */
+export const reasignarYCrear = async (req: Request, res: Response) => {
+  try {
+    const { eventoPrevioId, nuevaEspacioId, nuevoEvento } = req.body;
+    if (!eventoPrevioId || !nuevoEvento)
+      return res.status(400).json({ success: false, error: 'Faltan datos para reasignación' });
+    const event = await eventService.reasignarYCrear(eventoPrevioId, nuevaEspacioId || null, nuevoEvento);
+    res.status(201).json({ success: true, message: "Evento creado con reasignación", data: event });
+  } catch (error) {
+    res.status(400).json({ success: false, error: error instanceof Error ? error.message : 'Error desconocido' });
+  }
+};
+
+export const reasignarYActualizar = async (req: Request<{ id: string }>, res: Response) => {
+  try {
+    const { eventoPrevioId, nuevaEspacioId, updateData } = req.body;
+    if (!eventoPrevioId || !updateData)
+      return res.status(400).json({ success: false, error: 'Faltan datos para reasignación' });
+    const event = await eventService.reasignarYActualizar(
+      eventoPrevioId, nuevaEspacioId || null, req.params.id, updateData
+    );
+    res.json({ success: true, message: "Evento actualizado con reasignación", data: event });
+  } catch (error) {
+    res.status(400).json({ success: false, error: error instanceof Error ? error.message : 'Error desconocido' });
   }
 };

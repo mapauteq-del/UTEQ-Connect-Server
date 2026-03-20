@@ -3,169 +3,144 @@ import fs from 'fs';
 import path from 'path';
 import mongoose from 'mongoose';
 
-// Interfaz para el encargado poblado
-interface IPersonalPopulated {
+interface IUserPopulated {
   _id: mongoose.Types.ObjectId;
   nombre: string;
-  apellidoPaterno: string;
-  apellidoMaterno?: string;
   email: string;
+  rol?: string;
 }
 
-// Interfaz para evento con creadoPor poblado
 interface IEventPopulated extends Omit<IEvent, 'creadoPor'> {
-  creadoPor?: IPersonalPopulated;
+  creadoPor?: IUserPopulated;
 }
 
+/* ─── helpers ─── */
+const toMin = (h: string) => { const [hh, mm] = h.split(':').map(Number); return hh * 60 + mm; };
+const hayTraslapeH = (h1i: string, h1f: string, h2i: string, h2f: string) =>
+  toMin(h1i) < toMin(h2f) && toMin(h1f) > toMin(h2i);
+
+/* ─────────────────────────────────────────────
+   Queries básicas
+───────────────────────────────────────────── */
 export const findAllEvents = async () => {
   try {
-    const events = await Event.find()
+    return await Event.find()
       .populate("destino")
-      .populate({ path: "creadoPor", select: "nombre apellidoPaterno apellidoMaterno email" })
-      .sort({ fechaInicio: 1 });
-    return events;
-  } catch (error) {
+      .populate("espacio")
+      .populate({ path: "creadoPor", select: "nombre email rol" })
+      .sort({ fecha: 1, horaInicio: 1 });
+  } catch {
     throw new Error('Error obteniendo eventos');
   }
 };
 
 export const findEventById = async (id: string) => {
   try {
-    const event = await Event.findById(id)
+    return await Event.findById(id)
       .populate("destino")
-      .populate({ path: "creadoPor", select: "nombre apellidoPaterno apellidoMaterno email" });
-    return event;
-  } catch (error) {
+      .populate("espacio")
+      .populate({ path: "creadoPor", select: "nombre email rol" });
+  } catch {
     throw new Error('Error obteniendo evento');
   }
 };
 
-// Función auxiliar para verificar conflictos de eventos
-const checkEventConflict = async (eventData: any, eventId?: string) => {
-  const fechaInicio = new Date(eventData.fechaInicio);
-  const fechaFin = new Date(eventData.fechaFin || eventData.fechaInicio);
-  
-  // Normalizar fechas a UTC
-  fechaInicio.setUTCHours(0, 0, 0, 0);
-  fechaFin.setUTCHours(23, 59, 59, 999);
+/* ─────────────────────────────────────────────
+   Verificación de conflictos
+   • SALA  → misma espacio + misma fecha + traslape hora  (duro)
+   • LUGAR → mismo destino + misma fecha + traslape hora  (blando/info)
+───────────────────────────────────────────── */
+export const checkEventConflicts = async (eventData: any, eventId?: string) => {
+  // Normalizar fecha a medianoche UTC
+  const fecha = new Date(eventData.fecha || eventData.fechaInicio);
+  fecha.setUTCHours(0, 0, 0, 0);
 
-  // Buscar eventos que se traslapen en fecha y destino
-  const query: any = {
-    destino: eventData.destino,
+  const fechaSiguiente = new Date(fecha);
+  fechaSiguiente.setUTCDate(fechaSiguiente.getUTCDate() + 1);
+
+  const baseQuery: any = {
     activo: true,
-    $or: [
-      {
-        fechaInicio: { $lte: fechaFin },
-        fechaFin: { $gte: fechaInicio }
-      }
-    ]
+    destino: eventData.destino,
+    fecha: { $gte: fecha, $lt: fechaSiguiente }   // misma fecha exacta
   };
+  if (eventId) baseQuery._id = { $ne: eventId };
 
-  // Si estamos editando, excluir el evento actual
-  if (eventId) {
-    query._id = { $ne: eventId };
-  }
+  const candidatos = await Event.find(baseQuery)
+    .populate("espacio")
+    .populate({ path: "creadoPor", select: "nombre email rol" })
+    .lean() as any[];
 
-  const conflictingEvents = await Event.find(query)
-    .populate({ 
-      path: "creadoPor", 
-      select: "nombre apellidoPaterno apellidoMaterno email" 
-    })
-    .lean() as IEventPopulated[]; // ✅ Usar lean() y tipar correctamente
+  const conTraslape = candidatos.filter(ev =>
+    hayTraslapeH(eventData.horaInicio, eventData.horaFin, ev.horaInicio, ev.horaFin)
+  );
 
-  if (conflictingEvents.length === 0) {
-    return { hasConflict: false, conflicts: [] };
-  }
-
-  // Verificar conflictos de horario
-  const conflicts = conflictingEvents.filter(event => {
-    // Convertir horas a minutos para comparar
-    const [h1Start, m1Start] = eventData.horaInicio.split(':').map(Number);
-    const [h1End, m1End] = eventData.horaFin.split(':').map(Number);
-    const newStart = h1Start * 60 + m1Start;
-    const newEnd = h1End * 60 + m1End;
-
-    const [h2Start, m2Start] = event.horaInicio.split(':').map(Number);
-    const [h2End, m2End] = event.horaFin.split(':').map(Number);
-    const existingStart = h2Start * 60 + m2Start;
-    const existingEnd = h2End * 60 + m2End;
-
-    // Verificar si hay traslape de horarios
-    return (
-      (newStart >= existingStart && newStart < existingEnd) ||
-      (newEnd > existingStart && newEnd <= existingEnd) ||
-      (newStart <= existingStart && newEnd >= existingEnd)
-    );
-  });
-
-  if (conflicts.length > 0) {
-    return {
-      hasConflict: true,
-      conflicts: conflicts.map(c => {
-        const encargado = c.creadoPor as IPersonalPopulated | undefined; // ✅ Cast explícito
-        
-        return {
-          titulo: c.titulo,
-          fechaInicio: c.fechaInicio,
-          fechaFin: c.fechaFin,
-          horaInicio: c.horaInicio,
-          horaFin: c.horaFin,
-          encargado: encargado ? {
-            nombre: `${encargado.nombre} ${encargado.apellidoPaterno}`,
-            email: encargado.email
-          } : null
-        };
+  // Conflicto de SALA (duro): mismo espacio
+  const conflictoSala = eventData.espacio
+    ? conTraslape.find(ev => {
+        const salaEv = ev.espacio?._id?.toString() || ev.espacio?.toString();
+        return salaEv && salaEv === eventData.espacio.toString();
       })
-    };
-  }
+    : null;
 
-  return { hasConflict: false, conflicts: [] };
+  // Conflicto de LUGAR (blando/info): mismo destino, sala distinta
+  const conflictoLugar = conTraslape.filter(ev =>
+    !conflictoSala || ev._id.toString() !== conflictoSala._id.toString()
+  );
+
+  return { conflictoSala: conflictoSala || null, conflictoLugar };
 };
 
+/* ─────────────────────────────────────────────
+   Crear evento  (forzar:true salta validación de sala)
+───────────────────────────────────────────── */
 export const createEvent = async (eventData: any) => {
   try {
-    if (eventData.cuposDisponibles > eventData.cupos) {
+    if (eventData.cuposDisponibles > eventData.cupos)
       throw new Error("Los cupos disponibles no pueden ser mayores que los cupos totales");
+
+    // Normalizar fecha a UTC medianoche
+    const fecha = new Date(eventData.fecha || eventData.fechaInicio);
+    if (isNaN(fecha.getTime())) throw new Error('Fecha inválida');
+    fecha.setUTCHours(0, 0, 0, 0);
+
+    // Validar que la fecha no sea en el pasado (comparar solo fecha, sin hora)
+    if (!eventData.forzar) {
+      const hoy = new Date(); hoy.setUTCHours(0, 0, 0, 0);
+      if (fecha < hoy) throw new Error("No se pueden crear eventos en fechas pasadas");
+
+      // Si es hoy, validar que la hora de inicio no haya pasado
+      if (fecha.getTime() === hoy.getTime()) {
+        const ahora = new Date();
+        const [hh, mm] = eventData.horaInicio.split(':').map(Number);
+        const inicioMin = hh * 60 + mm;
+        const ahoraMin = ahora.getUTCHours() * 60 + ahora.getUTCMinutes();
+        if (inicioMin <= ahoraMin)
+          throw new Error("No se pueden crear eventos en horarios que ya pasaron");
+      }
     }
-    
-    // Verificar conflictos
-    const conflictCheck = await checkEventConflict(eventData);
-    
-    if (conflictCheck.hasConflict) {
-      const conflictMessages = conflictCheck.conflicts.map(c => 
-        `• "${c.titulo}" - ${new Date(c.fechaInicio).toLocaleDateString('es-MX')} (${c.horaInicio}-${c.horaFin}) - Encargado: ${c.encargado?.nombre || 'No asignado'} (${c.encargado?.email || 'Sin email'})`
-      ).join('\n');
-      
-      throw new Error(
-        `⚠️ CONFLICTO DE HORARIO DETECTADO\n\n` +
-        `Ya existe(n) evento(s) en el mismo lugar y horario:\n\n${conflictMessages}\n\n` +
-        `Por favor, ponte en contacto con el/los encargado(s) para coordinar o elegir otro horario/lugar.`
-      );
+
+    if (!eventData.forzar) {
+      const { conflictoSala } = await checkEventConflicts(eventData);
+      if (conflictoSala) {
+        throw new Error(
+          `CONFLICT_SALA::${JSON.stringify({
+            id:         conflictoSala._id,
+            titulo:     conflictoSala.titulo,
+            horaInicio: conflictoSala.horaInicio,
+            horaFin:    conflictoSala.horaFin,
+          })}`
+        );
+      }
     }
-    
-    // Normalizar fechas a UTC y establecer horarios
-    const fechaInicio = new Date(eventData.fechaInicio);
-    const fechaFin = new Date(eventData.fechaFin || eventData.fechaInicio);
-    
-    // Asegurarse de que las fechas sean válidas
-    if (isNaN(fechaInicio.getTime())) {
-      throw new Error('Fecha de inicio inválida');
-    }
-    if (isNaN(fechaFin.getTime())) {
-      throw new Error('Fecha de fin inválida');
-    }
-    
-    // Calcular fecha de desactivación automática (15 minutos después de la hora de fin en el último día)
+
+    // desactivarEn = misma fecha + horaFin + 15 min
     const [horaFin, minutosFin] = eventData.horaFin.split(':').map(Number);
-    const desactivarEn = new Date(fechaFin);
+    const desactivarEn = new Date(fecha);
     desactivarEn.setUTCHours(horaFin, minutosFin, 0, 0);
     desactivarEn.setMinutes(desactivarEn.getMinutes() + 15);
-    
-    eventData.fechaInicio = fechaInicio;
-    eventData.fechaFin = fechaFin;
-    eventData.desactivarEn = desactivarEn;
-    
-    const event = new Event(eventData);
+
+    const { forzar, fechaInicio, fechaFin, ...datos } = eventData; // limpia campos viejos si vienen
+    const event = new Event({ ...datos, fecha, desactivarEn });
     await event.save();
     return event;
   } catch (error) {
@@ -173,213 +148,197 @@ export const createEvent = async (eventData: any) => {
   }
 };
 
+/* ─────────────────────────────────────────────
+   Actualizar evento
+───────────────────────────────────────────── */
 export const updateEvent = async (id: string, eventData: any) => {
   try {
-    if (eventData.cuposDisponibles !== undefined && eventData.cupos !== undefined) {
-      if (eventData.cuposDisponibles > eventData.cupos) {
-        throw new Error("Los cupos disponibles no pueden ser mayores que los cupos totales");
+    if (eventData.cuposDisponibles !== undefined && eventData.cupos !== undefined &&
+        eventData.cuposDisponibles > eventData.cupos)
+      throw new Error("Los cupos disponibles no pueden ser mayores que los cupos totales");
+
+    // Validar que la nueva fecha/hora no sea pasada
+    if (!eventData.forzar && (eventData.fecha || eventData.fechaInicio || eventData.horaInicio)) {
+      const fechaCandidata = new Date(eventData.fecha || eventData.fechaInicio);
+      if (!isNaN(fechaCandidata.getTime())) {
+        fechaCandidata.setUTCHours(0, 0, 0, 0);
+        const hoy = new Date(); hoy.setUTCHours(0, 0, 0, 0);
+        if (fechaCandidata < hoy)
+          throw new Error("No se pueden asignar eventos a fechas pasadas");
+        if (fechaCandidata.getTime() === hoy.getTime() && eventData.horaInicio) {
+          const ahora = new Date();
+          const [hh, mm] = eventData.horaInicio.split(':').map(Number);
+          const inicioMin = hh * 60 + mm;
+          const ahoraMin = ahora.getUTCHours() * 60 + ahora.getUTCMinutes();
+          if (inicioMin <= ahoraMin)
+            throw new Error("No se pueden asignar eventos a horarios que ya pasaron");
+        }
       }
     }
-    
-    // Verificar conflictos solo si se cambian fecha, hora o destino
-    if (eventData.fechaInicio || eventData.fechaFin || eventData.horaInicio || eventData.horaFin || eventData.destino) {
+
+    if (!eventData.forzar &&
+        (eventData.fecha || eventData.fechaInicio || eventData.horaInicio ||
+         eventData.horaFin || eventData.destino || eventData.espacio)) {
       const existingEvent = await Event.findById(id);
       if (!existingEvent) throw new Error("Evento no encontrado");
-      
+
       const dataToCheck = {
-        fechaInicio: eventData.fechaInicio || existingEvent.fechaInicio,
-        fechaFin: eventData.fechaFin || existingEvent.fechaFin,
+        fecha:      eventData.fecha      || eventData.fechaInicio || existingEvent.fecha,
         horaInicio: eventData.horaInicio || existingEvent.horaInicio,
-        horaFin: eventData.horaFin || existingEvent.horaFin,
-        destino: eventData.destino || existingEvent.destino
+        horaFin:    eventData.horaFin    || existingEvent.horaFin,
+        destino:    eventData.destino    || existingEvent.destino,
+        espacio:    eventData.espacio    || existingEvent.espacio,
       };
-      
-      const conflictCheck = await checkEventConflict(dataToCheck, id);
-      
-      if (conflictCheck.hasConflict) {
-        const conflictMessages = conflictCheck.conflicts.map(c => 
-          `• "${c.titulo}" - ${new Date(c.fechaInicio).toLocaleDateString('es-MX')} (${c.horaInicio}-${c.horaFin}) - Encargado: ${c.encargado?.nombre || 'No asignado'} (${c.encargado?.email || 'Sin email'})`
-        ).join('\n');
-        
+
+      const { conflictoSala } = await checkEventConflicts(dataToCheck, id);
+      if (conflictoSala) {
         throw new Error(
-          `⚠️ CONFLICTO DE HORARIO DETECTADO\n\n` +
-          `Ya existe(n) evento(s) en el mismo lugar y horario:\n\n${conflictMessages}\n\n` +
-          `Por favor, ponte en contacto con el/los encargado(s) para coordinar o elegir otro horario/lugar.`
+          `CONFLICT_SALA::${JSON.stringify({
+            id:         conflictoSala._id,
+            titulo:     conflictoSala.titulo,
+            horaInicio: conflictoSala.horaInicio,
+            horaFin:    conflictoSala.horaFin,
+          })}`
         );
       }
     }
-    
-    // Recalcular fecha de desactivación si se actualizó la fecha o hora de fin
-    if (eventData.fechaFin || eventData.horaFin) {
-      const event = await Event.findById(id);
-      if (!event) throw new Error("Evento no encontrado");
-      
-      const fechaFin = new Date(eventData.fechaFin || event.fechaFin);
-      const horaFin = eventData.horaFin || event.horaFin;
-      const [hora, minutos] = horaFin.split(':').map(Number);
-      
-      fechaFin.setUTCHours(hora, minutos, 0, 0);
-      fechaFin.setMinutes(fechaFin.getMinutes() + 15);
-      
-      eventData.desactivarEn = fechaFin;
+
+    // Recalcular desactivarEn si cambió fecha u horaFin
+    if (eventData.fecha || eventData.fechaInicio || eventData.horaFin) {
+      const ev = await Event.findById(id);
+      if (ev) {
+        const fechaBase = new Date(eventData.fecha || eventData.fechaInicio || ev.fecha);
+        fechaBase.setUTCHours(0, 0, 0, 0);
+        const [h, m] = (eventData.horaFin || ev.horaFin).split(':').map(Number);
+        const desactivarEn = new Date(fechaBase);
+        desactivarEn.setUTCHours(h, m, 0, 0);
+        desactivarEn.setMinutes(desactivarEn.getMinutes() + 15);
+        eventData.desactivarEn = desactivarEn;
+        // Normalizar campo fecha
+        if (eventData.fecha || eventData.fechaInicio) {
+          eventData.fecha = fechaBase;
+          delete eventData.fechaInicio;
+          delete eventData.fechaFin;
+        }
+      }
     }
-    
-    const event = await Event.findByIdAndUpdate(
-      id,
-      eventData,
-      { new: true, runValidators: true }
-    )
+
+    const { forzar, fechaInicio, fechaFin, ...datos } = eventData;
+    return await Event.findByIdAndUpdate(id, datos, { new: true, runValidators: true })
       .populate("destino")
-      .populate({ path: "creadoPor", select: "nombre apellidoPaterno apellidoMaterno email" });
-    return event;
+      .populate("espacio")
+      .populate({ path: "creadoPor", select: "nombre email rol" });
   } catch (error) {
     throw error;
   }
 };
 
+/* ─────────────────────────────────────────────
+   Reasignación atómica (solo superadmin)
+───────────────────────────────────────────── */
+export const reasignarYCrear = async (
+  eventoPrevioId: string,
+  nuevaEspacioId: string | null,
+  nuevoEventoData: any
+) => {
+  await Event.findByIdAndUpdate(eventoPrevioId, { espacio: nuevaEspacioId || null });
+  return createEvent({ ...nuevoEventoData, forzar: true });
+};
+
+export const reasignarYActualizar = async (
+  eventoPrevioId: string,
+  nuevaEspacioId: string | null,
+  eventoActualizarId: string,
+  updateData: any
+) => {
+  await Event.findByIdAndUpdate(eventoPrevioId, { espacio: nuevaEspacioId || null });
+  return updateEvent(eventoActualizarId, { ...updateData, forzar: true });
+};
+
+/* ─── Resto de funciones ─── */
+
 export const deleteEvent = async (id: string) => {
   try {
     const event = await Event.findById(id);
-    
-    // Eliminar imagen si existe
     if (event?.image) {
-      const imagePath = path.join(process.cwd(), event.image);
-      if (fs.existsSync(imagePath)) {
-        fs.unlinkSync(imagePath);
-      }
+      const p = path.join(process.cwd(), event.image);
+      if (fs.existsSync(p)) fs.unlinkSync(p);
     }
-    
     await Event.findByIdAndDelete(id);
     return event;
-  } catch (error) {
-    throw new Error('Error eliminando evento');
-  }
+  } catch { throw new Error('Error eliminando evento'); }
 };
 
 export const deactivateEvent = async (id: string) => {
   try {
-    const event = await Event.findByIdAndUpdate(
-      id,
-      { activo: false },
-      { new: true }
-    );
-    return event;
-  } catch (error) {
-    throw new Error('Error desactivando evento');
-  }
+    return await Event.findByIdAndUpdate(id, { activo: false }, { new: true });
+  } catch { throw new Error('Error desactivando evento'); }
 };
 
 export const updateCuposDisponibles = async (id: string, cantidad: number) => {
   try {
     const event = await Event.findById(id);
-    
-    if (!event) {
-      throw new Error("Evento no encontrado");
-    }
-
+    if (!event) throw new Error("Evento no encontrado");
     event.cuposDisponibles += cantidad;
-
-    if (event.cuposDisponibles < 0) {
-      throw new Error("No hay suficientes cupos disponibles");
-    }
-
-    if (event.cuposDisponibles > event.cupos) {
-      throw new Error("Los cupos disponibles no pueden exceder los cupos totales");
-    }
-
+    if (event.cuposDisponibles < 0) throw new Error("No hay suficientes cupos disponibles");
+    if (event.cuposDisponibles > event.cupos) throw new Error("Los cupos disponibles no pueden exceder los cupos totales");
     await event.save();
     return event;
-  } catch (error) {
-    throw error;
-  }
+  } catch (error) { throw error; }
 };
 
 export const findActiveEvents = async () => {
   try {
-    const events = await Event.find({ activo: true })
+    return await Event.find({ activo: true })
       .populate("destino")
-      .populate({ path: "creadoPor", select: "nombre apellidoPaterno apellidoMaterno email" })
-      .sort({ fechaInicio: 1 });
-    return events;
-  } catch (error) {
-    throw new Error('Error obteniendo eventos activos');
-  }
+      .populate("espacio")
+      .populate({ path: "creadoPor", select: "nombre email rol" })
+      .sort({ fecha: 1, horaInicio: 1 });
+  } catch { throw new Error('Error obteniendo eventos activos'); }
 };
 
 export const findEventsByDestino = async (destinoId: string) => {
   try {
-    const events = await Event.find({ destino: destinoId })
+    return await Event.find({ destino: destinoId })
       .populate("destino")
-      .populate({ path: "creadoPor", select: "nombre apellidoPaterno apellidoMaterno email" })
-      .sort({ fechaInicio: 1 });
-    return events;
-  } catch (error) {
-    throw new Error('Error obteniendo eventos por destino');
-  }
+      .populate("espacio")
+      .populate({ path: "creadoPor", select: "nombre email rol" })
+      .sort({ fecha: 1, horaInicio: 1 });
+  } catch { throw new Error('Error obteniendo eventos por destino'); }
 };
 
 export const updateEventImage = async (id: string, imagePath: string) => {
   try {
-    const oldEvent = await Event.findById(id);
-    
-    // Eliminar imagen anterior si existe
-    if (oldEvent?.image) {
-      const oldImagePath = path.join(process.cwd(), oldEvent.image);
-      if (fs.existsSync(oldImagePath)) {
-        fs.unlinkSync(oldImagePath);
-      }
+    const old = await Event.findById(id);
+    if (old?.image) {
+      const p = path.join(process.cwd(), old.image);
+      if (fs.existsSync(p)) fs.unlinkSync(p);
     }
-    
-    const event = await Event.findByIdAndUpdate(
-      id,
-      { image: imagePath },
-      { new: true }
-    );
-    return event;
-  } catch (error) {
-    throw new Error('Error actualizando imagen del evento');
-  }
+    return await Event.findByIdAndUpdate(id, { image: imagePath }, { new: true });
+  } catch { throw new Error('Error actualizando imagen del evento'); }
 };
 
 export const deleteEventImage = async (id: string) => {
   try {
     const event = await Event.findById(id);
-    
     if (event?.image) {
-      const imagePath = path.join(process.cwd(), event.image);
-      if (fs.existsSync(imagePath)) {
-        fs.unlinkSync(imagePath);
-      }
-      
+      const p = path.join(process.cwd(), event.image);
+      if (fs.existsSync(p)) fs.unlinkSync(p);
       event.image = undefined;
       await event.save();
     }
-    
     return event;
-  } catch (error) {
-    throw new Error('Error eliminando imagen del evento');
-  }
+  } catch { throw new Error('Error eliminando imagen del evento'); }
 };
 
-// Función para desactivar eventos automáticamente
 export const deactivateExpiredEvents = async () => {
   try {
-    const now = new Date();
-    
     const result = await Event.updateMany(
-      {
-        activo: true,
-        desactivarEn: { $lte: now }
-      },
-      {
-        $set: { activo: false }
-      }
+      { activo: true, desactivarEn: { $lte: new Date() } },
+      { $set: { activo: false } }
     );
-    
-    if (result.modifiedCount > 0) {
-      console.log(`⏰ ${result.modifiedCount} evento(s) desactivado(s) automáticamente`);
-    }
-    
+    if (result.modifiedCount > 0)
+      console.log(`${result.modifiedCount} evento(s) desactivado(s) automáticamente`);
     return result.modifiedCount;
   } catch (error) {
     console.error('Error desactivando eventos expirados:', error);

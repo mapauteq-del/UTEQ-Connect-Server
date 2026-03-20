@@ -193,7 +193,7 @@ export const createInvitationsForEvent = async (
 export const findInvitationByToken = async (token: string) => {
   return await EventInvitation.findOne({ token })
     .populate('evento')
-    .populate('usuario', '-password');
+    .populate('usuario', 'nombre email imagenPerfil');
 };
 
 /**
@@ -238,7 +238,7 @@ export const validateAndUseToken = async (token: string) => {
  */
 export const findInvitationsByEvent = async (eventoId: string) => {
   return await EventInvitation.find({ evento: eventoId })
-    .populate('usuario', '-password')
+    .populate('usuario', 'nombre email imagenPerfil')
     .sort({ fechaEnvio: -1 });
 };
 

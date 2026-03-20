@@ -95,7 +95,7 @@ export const register = async (req: Request, res: Response) => {
 /**
  * Registrar admin o superadmin con rol específico
  * POST /auth/register-admin
- * Body: { nombre, email, password, rol: 'admin' | 'superadmin' }
+ * Body: { nombre, email, password, rol: 'admin' | 'superadmin' | 'user' }
  */
 export const registerAdmin = async (req: Request, res: Response) => {
   try {
@@ -116,8 +116,8 @@ export const registerAdmin = async (req: Request, res: Response) => {
     }
 
     // Validar que el rol sea válido
-    const rolesPermitidos = ['admin', 'superadmin'];
-    const rolFinal = rolesPermitidos.includes(rol) ? rol : 'admin';
+    const rolesPermitidos = ['user', 'admin', 'superadmin'];
+    const rolFinal = rolesPermitidos.includes(rol) ? rol : 'user';
 
     const existingUser = await User.findOne({ email: email.toLowerCase() });
     if (existingUser) {
@@ -147,7 +147,7 @@ export const registerAdmin = async (req: Request, res: Response) => {
 
     res.status(201).json({
       success: true,
-      message: `${rolFinal === 'superadmin' ? 'SuperAdmin' : 'Admin'} registrado exitosamente`,
+      message: `${rolFinal === 'superadmin' ? 'SuperAdmin' : rolFinal === 'admin' ? 'Admin' : 'Usuario'} registrado exitosamente`,
       data: {
         user: {
           _id: newUser._id,
@@ -168,7 +168,6 @@ export const registerAdmin = async (req: Request, res: Response) => {
     res.status(500).json({ success: false, error: 'Error al registrar administrador' });
   }
 };
-
 
 /**
  * Login de usuario
