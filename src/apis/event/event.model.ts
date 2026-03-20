@@ -71,7 +71,7 @@ const EventSchema = new Schema<IEvent>({
     type: Date
   },
   image: {
-    type: String,
+    type: String, 
     required: false,
     trim: true
   }
