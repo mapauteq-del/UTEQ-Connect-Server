@@ -1,5 +1,5 @@
 import * as express from 'express';
-import { getNodes, getEdges, getFullGraph } from './graph_controller';
+import { getNodes, getEdges, getFullGraph } from './graph_controller.js';
 
 const router = express.Router();
 

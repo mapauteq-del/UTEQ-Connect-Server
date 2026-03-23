@@ -1,9 +1,11 @@
 import * as express from 'express';
-import { createInvitations, getInvitationByToken, validateToken, getEventInvitations, getEventStats, getUserInvitations, updateInvitationStatus, respondToInvitation, markAttendance, regenerateQR, registerToEvent } from './eventInvitation.controller.js';
+import { createInvitations, getInvitationByToken, validateToken, getEventInvitations, getEventStats, getUserInvitations, updateInvitationStatus, respondToInvitation, markAttendance, regenerateQR, registerToEvent, getMyTickets } from './eventInvitation.controller.js';
 import { authenticateToken } from '../middleware/auth.middleware.js';
 const router = express.Router();
 // Registro público a evento (requiere autenticación)
 router.post('/event/:eventoId/register', authenticateToken, registerToEvent);
+// Tickets del usuario (requiere autenticación)
+router.get('/my-tickets', authenticateToken, getMyTickets);
 // Crear invitaciones masivas (requiere autenticación y probablemente permisos de admin)
 router.post('/event/:eventoId/create', authenticateToken, createInvitations);
 // Obtener invitación por token (público para que usuarios puedan ver su invitación)

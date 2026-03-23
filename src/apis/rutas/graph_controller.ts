@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import * as graphService from './graph_service';
+import * as graphService from './graph_service.js';
 
 // GET /api/grafo/nodos
 export const getNodes = async (req: Request, res: Response) => {
