@@ -407,20 +407,16 @@ export const deactivateExpiredEvents = async () => {
   }
 };
 
-export const confirmAssistence = async (usuarioId: string, eventoId: string) => {
-  try {
-    const assistence = await EventInvitation.findOne({ 
-      usuario: usuarioId,
-      evento: eventoId,
-      estadoInvitacion: "aceptada"
-    });
+export const confirmAssistence = async (usuarioId: string, eventoId: string, estado: string) => {
+  const assistence = await EventInvitation.findOne({ 
+    usuario: usuarioId,
+    evento: eventoId,
+    estadoInvitacion: "aceptada"
+  });
 
-    if (!assistence) throw new Error("Asistencia no encontrada");
+  if (!assistence) throw new Error("Asistencia no encontrada");
 
-    assistence.estadoAsistencia = "asistio";
-    await assistence.save();
-    return assistence;
-  } catch (error) {
-    throw error;
-  }
+  assistence.estadoAsistencia = estado as "pendiente" | "asistio" | "no_asistio";
+  await assistence.save();
+  return assistence;
 }

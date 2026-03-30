@@ -321,13 +321,10 @@ export const reasignarYActualizar = async (req: Request<{ id: string }>, res: Re
   }
 };
 
+// controller
 export const confirmAssistence = async (req: Request, res: Response) => {
-  try {
-    const { userId, eventoId } = req.params; // 👈 agrega eventoId
-    await eventService.confirmAssistence(userId as string, eventoId as string);
-    res.json({ success: true, message: "Asistencia confirmada" });
-  } catch (error) {
-    console.error("ERROR completo:", error);
-    res.status(500).json({ success: false, message: "Error al confirmar asistencia" });
-  }
+  const { userId, eventoId } = req.params;
+  const { estadoAsistencia } = req.body; // 👈 recibe el estado
+  await eventService.confirmAssistence(userId as string, eventoId as string, estadoAsistencia as string);
+  res.json({ success: true, message: "Asistencia actualizada" });
 }
