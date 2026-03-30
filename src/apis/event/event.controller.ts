@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import * as eventService from './event.service.js';
+import { broadcastEventChange } from './event.sse.js';
 
 export const getEvents = async (req: Request, res: Response) => {
   try {
@@ -53,6 +54,8 @@ export const createEvent = async (req: Request, res: Response) => {
 
 
     const event = await eventService.createEvent(eventData);
+    broadcastEventChange('event_created', event); // 👈
+
     res.status(201).json({
       success: true,
       message: "Evento creado exitosamente",
@@ -104,6 +107,9 @@ export const updateEvent = async (req: Request, res: Response) => {
         error: 'Evento no encontrado'
       });
     }
+    
+    broadcastEventChange('event_updated', event); // 👈
+    
     res.json({
       success: true,
       message: "Evento actualizado exitosamente",
@@ -137,6 +143,7 @@ export const deleteEvent = async (req: Request, res: Response) => {
         error: 'Evento no encontrado'
       });
     }
+    broadcastEventChange('event_deleted', event);
     res.json({
       success: true,
       message: "Evento eliminado exitosamente"

@@ -1,4 +1,5 @@
 import * as eventService from './event.service.js';
+import { broadcastEventChange } from './event.sse.js';
 export const getEvents = async (req, res) => {
     try {
         const events = await eventService.findAllEvents();
@@ -48,6 +49,7 @@ export const createEvent = async (req, res) => {
             ...(req.file ? { image: `uploads/events/${req.file.filename}` } : {})
         };
         const event = await eventService.createEvent(eventData);
+        broadcastEventChange('event_created', event); // 👈
         res.status(201).json({
             success: true,
             message: "Evento creado exitosamente",
@@ -95,6 +97,7 @@ export const updateEvent = async (req, res) => {
                 error: 'Evento no encontrado'
             });
         }
+        broadcastEventChange('event_updated', event); // 👈
         res.json({
             success: true,
             message: "Evento actualizado exitosamente",
@@ -128,6 +131,7 @@ export const deleteEvent = async (req, res) => {
                 error: 'Evento no encontrado'
             });
         }
+        broadcastEventChange('event_deleted', event);
         res.json({
             success: true,
             message: "Evento eliminado exitosamente"
