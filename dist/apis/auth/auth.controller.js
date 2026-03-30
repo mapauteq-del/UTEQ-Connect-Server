@@ -1,13 +1,10 @@
 import jwt from 'jsonwebtoken';
 import User from '../user/user.model.js';
+import { registrarLog } from '../logs/log.service.js'; // 👈
 const JWT_SECRET = process.env.JWT_SECRET || 'tu_secreto_super_seguro_cambialo';
-/**
- * Registrar un nuevo usuario
- */
 export const register = async (req, res) => {
     try {
         const { nombre, email, password } = req.body;
-        // Validaciones
         if (!nombre || !email || !password) {
             return res.status(400).json({
                 success: false,
@@ -20,7 +17,6 @@ export const register = async (req, res) => {
                 error: 'La contraseña debe tener al menos 6 caracteres'
             });
         }
-        // Verificar si el email ya existe
         const existingUser = await User.findOne({ email: email.toLowerCase() });
         if (existingUser) {
             return res.status(400).json({
@@ -31,22 +27,28 @@ export const register = async (req, res) => {
         const newUser = await User.create({
             nombre: nombre.trim(),
             email: email.trim().toLowerCase(),
-            passwordHash: password, // ← Enviar password en texto plano
+            passwordHash: password,
             rol: 'user',
             estatus: 'activo',
             fechaCreacion: new Date(),
         });
-        // Generar token JWT
+        await registrarLog({
+            nivel: 'info',
+            evento: 'Usuario registrado',
+            metodo: req.method,
+            ruta: req.originalUrl,
+            statusCode: 201,
+            ip: req.ip,
+            userId: newUser._id.toString(),
+            detalle: `Email: ${email}`,
+        });
         const payload = {
             id: newUser._id.toString(),
             _id: newUser._id.toString(),
             email: newUser.email,
             rol: newUser.rol
         };
-        const options = {
-            expiresIn: '7d'
-        };
-        const token = jwt.sign(payload, JWT_SECRET, options);
+        const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
         res.status(201).json({
             success: true,
             message: 'Usuario registrado exitosamente',
@@ -70,17 +72,9 @@ export const register = async (req, res) => {
                 error: 'Este correo electrónico ya está registrado'
             });
         }
-        res.status(500).json({
-            success: false,
-            error: 'Error al registrar usuario'
-        });
+        res.status(500).json({ success: false, error: 'Error al registrar usuario' });
     }
 };
-/**
- * Registrar admin o superadmin con rol específico
- * POST /auth/register-admin
- * Body: { nombre, email, password, rol: 'admin' | 'superadmin' | 'user' }
- */
 export const registerAdmin = async (req, res) => {
     try {
         const { nombre, email, password, rol } = req.body;
@@ -96,11 +90,19 @@ export const registerAdmin = async (req, res) => {
                 error: 'La contraseña debe tener al menos 6 caracteres'
             });
         }
-        // Validar que el rol sea válido
         const rolesPermitidos = ['user', 'admin', 'superadmin'];
         const rolFinal = rolesPermitidos.includes(rol) ? rol : 'user';
-        // Validar permisos: admin no puede crear superadmin
         if (req.user?.rol === 'admin' && rolFinal === 'superadmin') {
+            await registrarLog({
+                nivel: 'warn',
+                evento: 'Intento de crear superadmin sin permisos',
+                metodo: req.method,
+                ruta: req.originalUrl,
+                statusCode: 403,
+                ip: req.ip,
+                userId: req.user?._id?.toString(),
+                detalle: `Email intento: ${email}`,
+            });
             return res.status(403).json({
                 success: false,
                 error: 'No tienes permisos para crear superadministradores'
@@ -117,18 +119,22 @@ export const registerAdmin = async (req, res) => {
             nombre: nombre.trim(),
             email: email.trim().toLowerCase(),
             passwordHash: password,
-            rol: rolFinal, // ← rol que llegó en el body
+            rol: rolFinal,
             estatus: 'activo',
             fechaCreacion: new Date(),
             requiereCambioPassword: rolFinal === 'admin' || rolFinal === 'superadmin',
         });
-        const payload = {
-            id: newUser._id.toString(),
-            _id: newUser._id.toString(),
-            email: newUser.email,
-            rol: newUser.rol
-        };
-        const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
+        await registrarLog({
+            nivel: 'info',
+            evento: `Admin registrado - rol: ${rolFinal}`,
+            metodo: req.method,
+            ruta: req.originalUrl,
+            statusCode: 201,
+            ip: req.ip,
+            userId: newUser._id.toString(),
+            detalle: `Email: ${email}, creado por: ${req.user?._id}`,
+        });
+        const token = jwt.sign({ id: newUser._id.toString(), _id: newUser._id.toString(), email: newUser.email, rol: newUser.rol }, JWT_SECRET, { expiresIn: '7d' });
         res.status(201).json({
             success: true,
             message: `${rolFinal === 'superadmin' ? 'SuperAdmin' : rolFinal === 'admin' ? 'Admin' : 'Usuario'} registrado exitosamente`,
@@ -152,62 +158,77 @@ export const registerAdmin = async (req, res) => {
         res.status(500).json({ success: false, error: 'Error al registrar administrador' });
     }
 };
-/**
- * Login de usuario
- */
 export const login = async (req, res) => {
     try {
         const { email, password } = req.body;
-        console.log('🔍 Intentando login con:', email);
-        // Validaciones
         if (!email || !password) {
             return res.status(400).json({
                 success: false,
                 error: 'Email y contraseña son requeridos'
             });
         }
-        // Buscar usuario - INCLUIR passwordHash explícitamente
         const user = await User.findOne({ email: email.toLowerCase() }).select('+passwordHash');
         if (!user) {
-            console.log('❌ Usuario no encontrado');
-            return res.status(401).json({
-                success: false,
-                error: 'Credenciales inválidas'
+            await registrarLog({
+                nivel: 'warn',
+                evento: 'Login fallido - usuario no existe',
+                metodo: req.method,
+                ruta: req.originalUrl,
+                statusCode: 401,
+                ip: req.ip,
+                detalle: `Email: ${email}`,
             });
+            return res.status(401).json({ success: false, error: 'Credenciales inválidas' });
         }
-        console.log('✅ Usuario encontrado:', user.email);
-        console.log('🔑 passwordHash existe?', !!user.passwordHash);
-        // Verificar si está activo
         if (user.estatus !== 'activo') {
+            await registrarLog({
+                nivel: 'warn',
+                evento: 'Login fallido - cuenta desactivada',
+                metodo: req.method,
+                ruta: req.originalUrl,
+                statusCode: 403,
+                ip: req.ip,
+                userId: user._id.toString(),
+                detalle: `Email: ${email}`,
+            });
             return res.status(403).json({
                 success: false,
                 error: 'Tu cuenta ha sido desactivada. Contacta al administrador.'
             });
         }
-        // Verificar contraseña usando el método del modelo
         const isPasswordValid = await user.comparePassword(password);
-        console.log('🔐 Contraseña válida?', isPasswordValid);
         if (!isPasswordValid) {
-            return res.status(401).json({
-                success: false,
-                error: 'Credenciales inválidas'
+            await registrarLog({
+                nivel: 'warn',
+                evento: 'Login fallido - contraseña incorrecta',
+                metodo: req.method,
+                ruta: req.originalUrl,
+                statusCode: 401,
+                ip: req.ip,
+                userId: user._id.toString(),
+                detalle: `Email: ${email}`,
             });
+            return res.status(401).json({ success: false, error: 'Credenciales inválidas' });
         }
-        // Actualizar último login
+        await registrarLog({
+            nivel: 'info',
+            evento: 'Login exitoso',
+            metodo: req.method,
+            ruta: req.originalUrl,
+            statusCode: 200,
+            ip: req.ip,
+            userId: user._id.toString(),
+            detalle: `Email: ${email}`,
+        });
         user.ultimoLogin = new Date();
         await user.save();
-        // Generar token JWT
         const payload = {
             id: user._id.toString(),
             _id: user._id.toString(),
             email: user.email,
             rol: user.rol
         };
-        const options = {
-            expiresIn: '7d'
-        };
-        const token = jwt.sign(payload, JWT_SECRET, options);
-        console.log('✅ Login exitoso, token generado');
+        const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
         res.json({
             success: true,
             message: 'Login exitoso',
@@ -227,62 +248,64 @@ export const login = async (req, res) => {
         });
     }
     catch (error) {
-        console.error('💥 Error en login:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Error al iniciar sesión'
-        });
+        console.error('Error en login:', error);
+        res.status(500).json({ success: false, error: 'Error al iniciar sesión' });
     }
 };
 export const biometricLogin = async (req, res) => {
     try {
         const { email } = req.body;
         if (!email) {
-            return res.status(400).json({
-                success: false,
-                error: 'Email es requerido'
-            });
+            return res.status(400).json({ success: false, error: 'Email es requerido' });
         }
         const user = await User.findOne({ email: email.toLowerCase() });
         if (!user) {
-            return res.status(401).json({
-                success: false,
-                error: 'Usuario no encontrado'
+            await registrarLog({
+                nivel: 'warn',
+                evento: 'Login biométrico fallido - usuario no existe',
+                metodo: req.method,
+                ruta: req.originalUrl,
+                statusCode: 401,
+                ip: req.ip,
+                detalle: `Email: ${email}`,
             });
+            return res.status(401).json({ success: false, error: 'Usuario no encontrado' });
         }
         if (user.estatus !== 'activo') {
-            return res.status(403).json({
-                success: false,
-                error: 'Tu cuenta ha sido desactivada.'
+            await registrarLog({
+                nivel: 'warn',
+                evento: 'Login biométrico fallido - cuenta desactivada',
+                metodo: req.method,
+                ruta: req.originalUrl,
+                statusCode: 403,
+                ip: req.ip,
+                userId: user._id.toString(),
+                detalle: `Email: ${email}`,
             });
+            return res.status(403).json({ success: false, error: 'Tu cuenta ha sido desactivada.' });
         }
-        // Generar nuevo token
-        const payload = {
-            id: user._id.toString(),
-            _id: user._id.toString(),
-            email: user.email,
-            rol: user.rol
-        };
-        const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
+        await registrarLog({
+            nivel: 'info',
+            evento: 'Login biométrico exitoso',
+            metodo: req.method,
+            ruta: req.originalUrl,
+            statusCode: 200,
+            ip: req.ip,
+            userId: user._id.toString(),
+            detalle: `Email: ${email}`,
+        });
+        const token = jwt.sign({ id: user._id.toString(), _id: user._id.toString(), email: user.email, rol: user.rol }, JWT_SECRET, { expiresIn: '7d' });
         res.json({
             success: true,
             message: 'Login biométrico exitoso',
             data: {
-                user: {
-                    _id: user._id,
-                    nombre: user.nombre,
-                    email: user.email,
-                    rol: user.rol,
-                },
+                user: { _id: user._id, nombre: user.nombre, email: user.email, rol: user.rol },
                 token
             }
         });
     }
     catch (error) {
-        res.status(500).json({
-            success: false,
-            error: 'Error en login biométrico'
-        });
+        res.status(500).json({ success: false, error: 'Error en login biométrico' });
     }
 };
 export const getMe = async (req, res) => {

@@ -14,6 +14,7 @@ import espacioRoutes from "./apis/space/Espacio.routes.js";
 import mostVisitedRoutes from "./apis/most_visited/most_visited.route.js";
 import { deactivateExpiredEvents } from './apis/event/event.service.js';
 import graphRoutes from './apis/rutas/graph_routes.js';
+import { logMiddleware } from './apis/logs/log.middleware.js';
 import path from 'path';
 import fs from 'fs';
 dotenv.config();
@@ -23,14 +24,14 @@ const httpServer = createServer(app); // 👈
 
 // 👈 Inicializar socket.io
 export const io = new Server(httpServer, {
-  cors: { origin: '*' }
+    cors: { origin: '*' }
 });
 
 io.on('connection', (socket) => {
-  console.log('🔌 Cliente conectado:', socket.id);
-  socket.on('disconnect', () => {
-    console.log('🔌 Cliente desconectado:', socket.id);
-  });
+    console.log('🔌 Cliente conectado:', socket.id);
+    socket.on('disconnect', () => {
+        console.log('🔌 Cliente desconectado:', socket.id);
+    });
 });
 
 const PORT = process.env.PORT || 3000;
@@ -68,6 +69,8 @@ setInterval(async () => {
         console.error('Error en tarea programada de desactivación:', error);
     }
 }, 60000);
+
+app.use(logMiddleware);
 
 app.use('/api/locations', locationRoutes);
 app.use('/api/events', eventRoutes);
