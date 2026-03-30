@@ -1,6 +1,8 @@
 import express from 'express';
 import { register, registerAdmin, login } from './auth.controller.js';
 import { authenticateToken, requireAdmin, requireRole } from '../middleware/auth.middleware.js';
+import { register, registerAdmin, login, biometricLogin, getMe } from './auth.controller.js';
+import { authenticateToken } from '../middleware/auth.middleware.js';
 
 const router = express.Router();
 
@@ -8,6 +10,11 @@ const router = express.Router();
 router.post('/register', register);  // POST /auth/register
 router.post('/register-admin', authenticateToken, requireAdmin, registerAdmin);    // POST /auth/register-admin → rol: admin o superadmin
 router.post('/login', login);        // POST /auth/login
+router.post('/biometric-login', biometricLogin); // POST /auth/biometric-login
+
+
+router.get('/me', authenticateToken, getMe);
+
 
 export default router;
 

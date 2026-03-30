@@ -10,7 +10,8 @@ import {
   respondToInvitation,
   markAttendance,
   regenerateQR,
-  registerToEvent
+  registerToEvent,
+  getMyTickets
 } from './eventInvitation.controller.js';
 import { authenticateToken } from '../middleware/auth.middleware.js';
 
@@ -22,7 +23,8 @@ router.post(
   authenticateToken,
   registerToEvent
 );
-
+// Tickets del usuario (requiere autenticación)
+router.get('/my-tickets', authenticateToken, getMyTickets);
 // Crear invitaciones masivas (requiere autenticación y probablemente permisos de admin)
 router.post('/event/:eventoId/create', authenticateToken, createInvitations);
 
@@ -54,5 +56,8 @@ router.patch('/:id/asistencia', authenticateToken, markAttendance);
 
 // Regenerar QR (requiere autenticación)
 router.patch('/:id/regenerate-qr', authenticateToken, regenerateQR);
+
+
+
 
 export default router;

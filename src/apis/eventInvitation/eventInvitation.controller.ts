@@ -312,3 +312,31 @@ export const regenerateQR = async (req: Request, res: Response) => {
     });
   }
 };
+
+
+// PARA TENER LOS TICKETS DEL USUARIO
+
+export const getMyTickets = async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user?.id || (req as any).user?._id;
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'Usuario no autenticado'
+      });
+    }
+
+    const invitations = await invitationService.findInvitationsByUser(userId.toString());
+
+    res.json({
+      success: true,
+      data: invitations
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Error desconocido'
+    });
+  }
+};
