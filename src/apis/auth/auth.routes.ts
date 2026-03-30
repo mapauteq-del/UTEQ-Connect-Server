@@ -1,8 +1,7 @@
 import express from 'express';
 import { register, registerAdmin, login } from './auth.controller.js';
-import { authenticateToken, requireAdmin, requireRole } from '../middleware/auth.middleware.js';
-import { register, registerAdmin, login, biometricLogin, getMe } from './auth.controller.js';
-import { authenticateToken } from '../middleware/auth.middleware.js';
+import { authenticateToken, requireAdmin } from '../middleware/auth.middleware.js';
+import { biometricLogin, getMe } from './auth.controller.js';
 
 const router = express.Router();
 

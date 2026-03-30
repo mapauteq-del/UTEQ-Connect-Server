@@ -23,7 +23,9 @@ router.get('/user/:userId', authenticateToken, getUserInvitations);
 // Actualizar estado (requiere autenticación)
 router.patch('/:id/status', authenticateToken, updateInvitationStatus);
 // Marcar asistencia (requiere autenticación)
+// Se acepta tanto /attendance (nombre original) como /asistencia (usado por el frontend)
 router.patch('/:id/attendance', authenticateToken, markAttendance);
+router.patch('/:id/asistencia', authenticateToken, markAttendance);
 // Regenerar QR (requiere autenticación)
 router.patch('/:id/regenerate-qr', authenticateToken, regenerateQR);
 export default router;

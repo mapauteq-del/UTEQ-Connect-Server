@@ -56,26 +56,26 @@ export const checkEventConflicts = async (eventData: any, eventId?: string) => {
   // Normalizar fecha a medianoche UTC
   const fecha = new Date(eventData.fecha || eventData.fechaInicio);
   fecha.setUTCHours(0, 0, 0, 0);
- 
+
   const fechaSiguiente = new Date(fecha);
   fechaSiguiente.setUTCDate(fechaSiguiente.getUTCDate() + 1);
- 
+
   const baseQuery: any = {
     activo: true,
     destino: eventData.destino,
-    fecha: { $gte: fecha, $lt: fechaSiguiente }   // misma fecha exacta
+    fecha: { $gte: fecha, $lt: fechaSiguiente },
   };
   if (eventId) baseQuery._id = { $ne: eventId };
- 
+
   const candidatos = await Event.find(baseQuery)
     .populate("espacio")
     .populate({ path: "creadoPor", select: "nombre email rol" })
     .lean() as any[];
- 
+
   const conTraslape = candidatos.filter(ev =>
     hayTraslapeH(eventData.horaInicio, eventData.horaFin, ev.horaInicio, ev.horaFin)
   );
- 
+
   // Conflicto de SALA (duro): mismo espacio
   const conflictoSala = eventData.espacio
     ? conTraslape.find(ev => {
@@ -83,31 +83,28 @@ export const checkEventConflicts = async (eventData: any, eventId?: string) => {
       return salaEv && salaEv === eventData.espacio.toString();
     })
     : null;
- 
+
   // Conflicto de LUGAR (blando/info): mismo destino, sala distinta
   const conflictoLugar = conTraslape.filter(ev =>
     !conflictoSala || ev._id.toString() !== conflictoSala._id.toString()
   );
- 
+
   return { conflictoSala: conflictoSala || null, conflictoLugar };
 };
- 
+
 /* ─────────────────────────────────────────────
    Crear evento  (forzar:true salta validación de sala)
 ───────────────────────────────────────────── */
 export const createEvent = async (eventData: any) => {
   try {
-    // Si no se especifica cuposDisponibles, usar cupos totales (solo para almacenamiento)
     if (eventData.cuposDisponibles === undefined) {
       eventData.cuposDisponibles = eventData.cupos;
     }
- 
-    // Normalizar fecha a UTC medianoche
+
     const fecha = new Date(eventData.fecha || eventData.fechaInicio);
     if (isNaN(fecha.getTime())) throw new Error('Fecha inválida');
     fecha.setUTCHours(0, 0, 0, 0);
- 
-    // El lugar debe tener espacios (cerciorarse de que el usuario no intente crear evento en lugar sin aulas).
+
     if (!eventData.forzar) {
       const totalEspacios = await EspacioModel.countDocuments({ destino: eventData.destino });
       if (totalEspacios === 0) {
@@ -115,12 +112,10 @@ export const createEvent = async (eventData: any) => {
       }
     }
 
-    // Validar que la fecha no sea en el pasado (comparar solo fecha, sin hora)
     if (!eventData.forzar) {
       const hoy = new Date(); hoy.setUTCHours(0, 0, 0, 0);
       if (fecha < hoy) throw new Error("No se pueden crear eventos en fechas pasadas");
- 
-      // Si es hoy, validar que la hora de inicio no haya pasado
+
       if (fecha.getTime() === hoy.getTime()) {
         const ahora = new Date();
         const [hh, mm] = eventData.horaInicio.split(':').map(Number);
@@ -130,7 +125,7 @@ export const createEvent = async (eventData: any) => {
           throw new Error("No se pueden crear eventos en horarios que ya pasaron");
       }
     }
- 
+
     if (!eventData.forzar) {
       const { conflictoSala } = await checkEventConflicts(eventData);
       if (conflictoSala) {
@@ -144,14 +139,13 @@ export const createEvent = async (eventData: any) => {
         );
       }
     }
- 
-    // desactivarEn = misma fecha + horaFin + 15 min
+
     const [horaFin, minutosFin] = eventData.horaFin.split(':').map(Number);
     const desactivarEn = new Date(fecha);
     desactivarEn.setUTCHours(horaFin, minutosFin, 0, 0);
     desactivarEn.setMinutes(desactivarEn.getMinutes() + 15);
- 
-    const { forzar, fechaInicio, fechaFin, ...datos } = eventData; // limpia campos viejos si vienen
+
+    const { forzar, fechaInicio, fechaFin, ...datos } = eventData;
     const event = new Event({ ...datos, fecha, desactivarEn });
     await event.save();
     return event;
@@ -159,93 +153,87 @@ export const createEvent = async (eventData: any) => {
     throw error;
   }
 };
- 
+
 /* ─────────────────────────────────────────────
    Actualizar evento
 ───────────────────────────────────────────── */
 export const updateEvent = async (id: string, eventData: any) => {
   try {
-    // Durante la edición “normal”, no se permite dejar un destino sin salas si no hay ningún espacio.
     if (!eventData.forzar && eventData.destino) {
       const totalEspacios = await EspacioModel.countDocuments({ destino: eventData.destino });
       if (totalEspacios === 0) {
         throw new Error("El lugar seleccionado no tiene espacios registrados y no se puede actualizar el evento.");
       }
     }
- 
-    // Validar fecha/hora SOLO si se envía la flag allowPastDate=false explícitamente
-    // (por defecto al editar NO se valida fecha pasada, para permitir editar eventos existentes)
+
     if (!eventData.forzar && eventData.allowPastDate === false && (eventData.fecha || eventData.fechaInicio || eventData.horaInicio)) {
-    if (eventData.cuposDisponibles !== undefined && eventData.cupos !== undefined &&
-      eventData.cuposDisponibles > eventData.cupos)
-      throw new Error("Los cupos disponibles no pueden ser mayores que los cupos totales");
+      if (eventData.cuposDisponibles !== undefined && eventData.cupos !== undefined &&
+        eventData.cuposDisponibles > eventData.cupos)
+        throw new Error("Los cupos disponibles no pueden ser mayores que los cupos totales");
 
-    // Validar que la nueva fecha/hora no sea pasada
-    if (!eventData.forzar && (eventData.fecha || eventData.fechaInicio || eventData.horaInicio)) {
-      const fechaCandidata = new Date(eventData.fecha || eventData.fechaInicio);
-      if (!isNaN(fechaCandidata.getTime())) {
-        fechaCandidata.setUTCHours(0, 0, 0, 0);
-        const hoy = new Date(); hoy.setUTCHours(0, 0, 0, 0);
-        if (fechaCandidata < hoy)
-          throw new Error("No se pueden asignar eventos a fechas pasadas");
-        if (fechaCandidata.getTime() === hoy.getTime() && eventData.horaInicio) {
-          const ahora = new Date();
-          const [hh, mm] = eventData.horaInicio.split(':').map(Number);
-          const inicioMin = hh * 60 + mm;
-          const ahoraMin = ahora.getUTCHours() * 60 + ahora.getUTCMinutes();
-          if (inicioMin <= ahoraMin)
-            throw new Error("No se pueden asignar eventos a horarios que ya pasaron");
+      if (!eventData.forzar && (eventData.fecha || eventData.fechaInicio || eventData.horaInicio)) {
+        const fechaCandidata = new Date(eventData.fecha || eventData.fechaInicio);
+        if (!isNaN(fechaCandidata.getTime())) {
+          fechaCandidata.setUTCHours(0, 0, 0, 0);
+          const hoy = new Date(); hoy.setUTCHours(0, 0, 0, 0);
+          if (fechaCandidata < hoy)
+            throw new Error("No se pueden asignar eventos a fechas pasadas");
+          if (fechaCandidata.getTime() === hoy.getTime() && eventData.horaInicio) {
+            const ahora = new Date();
+            const [hh, mm] = eventData.horaInicio.split(':').map(Number);
+            const inicioMin = hh * 60 + mm;
+            const ahoraMin = ahora.getUTCHours() * 60 + ahora.getUTCMinutes();
+            if (inicioMin <= ahoraMin)
+              throw new Error("No se pueden asignar eventos a horarios que ya pasaron");
+          }
+        }
+      }
+
+      if (!eventData.forzar &&
+        (eventData.fecha || eventData.fechaInicio || eventData.horaInicio ||
+          eventData.horaFin || eventData.destino || eventData.espacio)) {
+        const existingEvent = await Event.findById(id);
+        if (!existingEvent) throw new Error("Evento no encontrado");
+
+        const dataToCheck = {
+          fecha: eventData.fecha || eventData.fechaInicio || existingEvent.fecha,
+          horaInicio: eventData.horaInicio || existingEvent.horaInicio,
+          horaFin: eventData.horaFin || existingEvent.horaFin,
+          destino: eventData.destino || existingEvent.destino,
+          espacio: eventData.espacio || existingEvent.espacio,
+        };
+
+        const { conflictoSala } = await checkEventConflicts(dataToCheck, id);
+        if (conflictoSala) {
+          throw new Error(
+            `CONFLICT_SALA::${JSON.stringify({
+              id: conflictoSala._id,
+              titulo: conflictoSala.titulo,
+              horaInicio: conflictoSala.horaInicio,
+              horaFin: conflictoSala.horaFin,
+            })}`
+          );
+        }
+      }
+
+      if (eventData.fecha || eventData.fechaInicio || eventData.horaFin) {
+        const ev = await Event.findById(id);
+        if (ev) {
+          const fechaBase = new Date(eventData.fecha || eventData.fechaInicio || ev.fecha);
+          fechaBase.setUTCHours(0, 0, 0, 0);
+          const [h, m] = (eventData.horaFin || ev.horaFin).split(':').map(Number);
+          const desactivarEn = new Date(fechaBase);
+          desactivarEn.setUTCHours(h, m, 0, 0);
+          desactivarEn.setMinutes(desactivarEn.getMinutes() + 15);
+          eventData.desactivarEn = desactivarEn;
+          if (eventData.fecha || eventData.fechaInicio) {
+            eventData.fecha = fechaBase;
+            delete eventData.fechaInicio;
+            delete eventData.fechaFin;
+          }
         }
       }
     }
- 
-    if (!eventData.forzar &&
-      (eventData.fecha || eventData.fechaInicio || eventData.horaInicio ||
-        eventData.horaFin || eventData.destino || eventData.espacio)) {
-      const existingEvent = await Event.findById(id);
-      if (!existingEvent) throw new Error("Evento no encontrado");
- 
-      const dataToCheck = {
-        fecha: eventData.fecha || eventData.fechaInicio || existingEvent.fecha,
-        horaInicio: eventData.horaInicio || existingEvent.horaInicio,
-        horaFin: eventData.horaFin || existingEvent.horaFin,
-        destino: eventData.destino || existingEvent.destino,
-        espacio: eventData.espacio || existingEvent.espacio,
-      };
- 
-      const { conflictoSala } = await checkEventConflicts(dataToCheck, id);
-      if (conflictoSala) {
-        throw new Error(
-          `CONFLICT_SALA::${JSON.stringify({
-            id: conflictoSala._id,
-            titulo: conflictoSala.titulo,
-            horaInicio: conflictoSala.horaInicio,
-            horaFin: conflictoSala.horaFin,
-          })}`
-        );
-      }
-    }
- 
-    // Recalcular desactivarEn si cambió fecha u horaFin
-    if (eventData.fecha || eventData.fechaInicio || eventData.horaFin) {
-      const ev = await Event.findById(id);
-      if (ev) {
-        const fechaBase = new Date(eventData.fecha || eventData.fechaInicio || ev.fecha);
-        fechaBase.setUTCHours(0, 0, 0, 0);
-        const [h, m] = (eventData.horaFin || ev.horaFin).split(':').map(Number);
-        const desactivarEn = new Date(fechaBase);
-        desactivarEn.setUTCHours(h, m, 0, 0);
-        desactivarEn.setMinutes(desactivarEn.getMinutes() + 15);
-        eventData.desactivarEn = desactivarEn;
-        // Normalizar campo fecha
-        if (eventData.fecha || eventData.fechaInicio) {
-          eventData.fecha = fechaBase;
-          delete eventData.fechaInicio;
-          delete eventData.fechaFin;
-        }
-      }
-    }
-
 
     const { forzar, fechaInicio, fechaFin, ...datos } = eventData;
     const updatedEvent = await Event.findByIdAndUpdate(id, datos, { new: true, runValidators: true })
@@ -253,7 +241,6 @@ export const updateEvent = async (id: string, eventData: any) => {
       .populate("espacio")
       .populate({ path: "creadoPor", select: "nombre email rol" });
 
-    // Recalcular cuposDisponibles SIEMPRE al actualizar, para que nunca quede desfasado
     if (updatedEvent) {
       const acceptedCount = await EventInvitation.countDocuments({
         evento: id,
@@ -269,7 +256,7 @@ export const updateEvent = async (id: string, eventData: any) => {
     throw error;
   }
 };
- 
+
 /* ─────────────────────────────────────────────
    Reasignación atómica (solo superadmin)
 ───────────────────────────────────────────── */
@@ -280,7 +267,6 @@ export const reasignarYCrear = async (
   nuevoEventoData: any
 ) => {
   console.log('ReasignarYCrear - Parámetros recibidos:', { eventoPrevioId, nuevaEspacioId, nuevaDestinoPrevioId, nuevoEventoData });
-  // Actualizar el evento previo con la nueva sala y su destino correcto
   const updatePrevio: any = {};
 
   if (nuevaEspacioId) {
@@ -290,17 +276,17 @@ export const reasignarYCrear = async (
   if (nuevaDestinoPrevioId) {
     updatePrevio.destino = nuevaDestinoPrevioId;
   } else if (nuevaEspacioId) {
-    // Fallback: inferir destino desde el espacio
     const nuevaSala = await EspacioModel.findById(nuevaEspacioId).lean() as any;
     if (nuevaSala?.destino) updatePrevio.destino = nuevaSala.destino;
   }
+
   console.log('ReasignarYCrear - Datos a actualizar en evento previo:', updatePrevio);
   await Event.findByIdAndUpdate(eventoPrevioId, updatePrevio);
   const nuevoEvento = await createEvent({ ...nuevoEventoData, forzar: true });
   console.log('ReasignarYCrear - Nuevo evento creado:', nuevoEvento);
   return nuevoEvento;
 };
- 
+
 export const reasignarYActualizar = async (
   eventoPrevioId: string,
   nuevaEspacioId: string | null,
@@ -309,32 +295,31 @@ export const reasignarYActualizar = async (
   updateData: any
 ) => {
   console.log('ReasignarYActualizar - Parámetros recibidos:', { eventoPrevioId, nuevaEspacioId, nuevaDestinoPrevioId, eventoActualizarId, updateData });
-  // Actualizar el evento previo con la nueva sala y su destino correcto
   const updatePrevio: any = {};
+
   if (nuevaEspacioId) {
     updatePrevio.espacio = nuevaEspacioId;
   }
   if (nuevaDestinoPrevioId) {
-    // Usar el destino que calculó el frontend (más confiable)
     updatePrevio.destino = nuevaDestinoPrevioId;
   } else if (nuevaEspacioId) {
-    // Fallback: inferir destino desde el espacio
     const nuevaSala = await EspacioModel.findById(nuevaEspacioId).lean() as any;
     if (nuevaSala?.destino) updatePrevio.destino = nuevaSala.destino;
   }
+
   console.log('ReasignarYActualizar - Datos a actualizar en evento previo:', updatePrevio);
-await Event.findByIdAndUpdate(
-  eventoPrevioId,
-  { $set: updatePrevio },
-  { new: true, runValidators: true }
-);
+  await Event.findByIdAndUpdate(
+    eventoPrevioId,
+    { $set: updatePrevio },
+    { new: true, runValidators: true }
+  );
   const eventoActualizado = await updateEvent(eventoActualizarId, { ...updateData, forzar: true });
   console.log('ReasignarYActualizar - Evento actualizado:', eventoActualizado);
   return eventoActualizado;
 };
- 
+
 /* ─── Resto de funciones ─── */
- 
+
 export const deleteEvent = async (id: string) => {
   try {
     const event = await Event.findById(id);
@@ -346,13 +331,13 @@ export const deleteEvent = async (id: string) => {
     return event;
   } catch { throw new Error('Error eliminando evento'); }
 };
- 
+
 export const deactivateEvent = async (id: string) => {
   try {
     return await Event.findByIdAndUpdate(id, { activo: false }, { new: true });
   } catch { throw new Error('Error desactivando evento'); }
 };
- 
+
 export const updateCuposDisponibles = async (id: string, cantidad: number) => {
   try {
     const event = await Event.findById(id);
@@ -362,7 +347,7 @@ export const updateCuposDisponibles = async (id: string, cantidad: number) => {
     return event;
   } catch (error) { throw error; }
 };
- 
+
 export const findActiveEvents = async () => {
   try {
     return await Event.find({ activo: true })
@@ -372,7 +357,7 @@ export const findActiveEvents = async () => {
       .sort({ fecha: 1, horaInicio: 1 });
   } catch { throw new Error('Error obteniendo eventos activos'); }
 };
- 
+
 export const findEventsByDestino = async (destinoId: string) => {
   try {
     return await Event.find({ destino: destinoId })
@@ -382,7 +367,7 @@ export const findEventsByDestino = async (destinoId: string) => {
       .sort({ fecha: 1, horaInicio: 1 });
   } catch { throw new Error('Error obteniendo eventos por destino'); }
 };
- 
+
 export const updateEventImage = async (id: string, imagePath: string) => {
   try {
     const old = await Event.findById(id);
@@ -393,7 +378,7 @@ export const updateEventImage = async (id: string, imagePath: string) => {
     return await Event.findByIdAndUpdate(id, { image: imagePath }, { new: true });
   } catch { throw new Error('Error actualizando imagen del evento'); }
 };
- 
+
 export const deleteEventImage = async (id: string) => {
   try {
     const event = await Event.findById(id);
@@ -406,7 +391,7 @@ export const deleteEventImage = async (id: string) => {
     return event;
   } catch { throw new Error('Error eliminando imagen del evento'); }
 };
- 
+
 export const deactivateExpiredEvents = async () => {
   try {
     const result = await Event.updateMany(
