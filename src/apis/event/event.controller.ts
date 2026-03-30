@@ -321,15 +321,13 @@ export const reasignarYActualizar = async (req: Request<{ id: string }>, res: Re
   }
 };
 
-export const confirmAssistence = async ( req: Request, res: Response ) =>{
-
+export const confirmAssistence = async (req: Request, res: Response) => {
   try {
-    const {id} = req.params;
+    const { id } = req.params;
     await eventService.confirmAssistence(id as string);
-    res.json({ succes: true, message: "Asistencia confirmada" });
+    res.json({ success: true, message: "Asistencia confirmada" });
   } catch (error) {
-    console.log( "ERROR: ", error)
-    res.status(500).json({ succes: false, message: "Error al confirmar asistencia" });
+    console.error("ERROR completo:", error);
+    res.status(500).json({ success: false, message: "Error al confirmar asistencia" });
   }
-
 }
