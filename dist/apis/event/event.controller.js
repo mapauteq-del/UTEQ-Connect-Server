@@ -124,7 +124,11 @@ export const updateEvent = async (req, res) => {
 export const deleteEvent = async (req, res) => {
     try {
         const id = req.params.id;
+        console.log('🔴 DELETE llamado con id:', id);
+        const found = await eventService.findEventById(id);
+        console.log('🔴 findById resultado:', found);
         const event = await eventService.deleteEvent(id);
+        console.log('🔴 deleteEvent resultado:', event);
         if (!event) {
             return res.status(404).json({
                 success: false,
@@ -132,10 +136,7 @@ export const deleteEvent = async (req, res) => {
             });
         }
         broadcastEventChange('event_deleted', event);
-        res.json({
-            success: true,
-            message: "Evento eliminado exitosamente"
-        });
+        res.json({ success: true, message: "Evento eliminado exitosamente" });
     }
     catch (error) {
         res.status(500).json({
