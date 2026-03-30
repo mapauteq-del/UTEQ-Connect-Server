@@ -362,7 +362,7 @@ export const deactivateExpiredEvents = async () => {
         throw new Error('Error desactivando eventos expirados');
     }
 };
-export const confirmAssistence = async (usuarioId, eventoId, estado) => {
+export const confirmAssistence = async (usuarioId, eventoId, estadoAsistencia) => {
     const assistence = await EventInvitation.findOne({
         usuario: usuarioId,
         evento: eventoId,
@@ -370,7 +370,7 @@ export const confirmAssistence = async (usuarioId, eventoId, estado) => {
     });
     if (!assistence)
         throw new Error("Asistencia no encontrada");
-    assistence.estadoAsistencia = estado;
+    assistence.estadoAsistencia = estadoAsistencia;
     await assistence.save();
     return assistence;
 };

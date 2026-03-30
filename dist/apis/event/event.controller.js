@@ -292,10 +292,15 @@ export const reasignarYActualizar = async (req, res) => {
         res.status(400).json({ success: false, error: error instanceof Error ? error.message : 'Error desconocido' });
     }
 };
-// controller
 export const confirmAssistence = async (req, res) => {
-    const { userId, eventoId } = req.params;
-    const { estadoAsistencia } = req.body; // 👈 recibe el estado
-    await eventService.confirmAssistence(userId, eventoId, estadoAsistencia);
-    res.json({ success: true, message: "Asistencia actualizada" });
+    try {
+        const { userId, eventoId } = req.params;
+        const { estadoAsistencia } = req.body; // 👈 recibe el estado
+        await eventService.confirmAssistence(userId, eventoId, estadoAsistencia);
+        res.json({ success: true, message: "Asistencia actualizada" });
+    }
+    catch (error) {
+        console.error("ERROR:", error);
+        res.status(500).json({ success: false, message: "Error al confirmar asistencia" });
+    }
 };
