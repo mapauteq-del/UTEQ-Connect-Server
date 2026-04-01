@@ -1,8 +1,9 @@
 import express, { Application } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
-import { createServer } from 'http'; // 👈
-import { Server } from 'socket.io'; // 👈
+import { createServer } from 'http';
+import { Server } from 'socket.io';
+import rateLimit from 'express-rate-limit';
 import connectDB from './database/MongoDB.js';
 import locationRoutes from './apis/location/location.routes.js';
 import eventRoutes from './apis/event/event.routes.js';
@@ -37,6 +38,30 @@ io.on('connection', (socket) => {
 
 const PORT = process.env.PORT || 3000;
 
+const generalLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 100,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Demasiadas peticiones, intenta más tarde.' }
+});
+
+const authLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 10,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Demasiados intentos de autenticación, espera 15 minutos.' }
+});
+
+const emailLimiter = rateLimit({
+    windowMs: 60 * 60 * 1000,
+    max: 5,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Demasiados envíos de correo, espera una hora.' }
+});
+
 const uploadsDestinos = path.join(process.cwd(), 'uploads', 'destinos');
 const uploadsEvents = path.join(process.cwd(), 'uploads', 'events');
 
@@ -57,9 +82,11 @@ if (!fs.existsSync(uploadsEvents)) {
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use("/api/espacios", espacioRoutes);
 app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 console.log('Archivos estáticos configurados');
+
+app.use('/api/', generalLimiter);
+
 
 connectDB();
 
@@ -73,19 +100,23 @@ setInterval(async () => {
 
 app.use(logMiddleware);
 
+app.use("/api/espacios", espacioRoutes);
 app.use('/api/locations', locationRoutes);
 app.use('/api/events', eventRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/invitaciones', invitationRoutes);
 app.use('/api/personal', personalRoutes);
-app.use("/api/auth", authRoutes);
+app.use("/api/auth", authLimiter, authRoutes);
 app.use("/api/most-visited", mostVisitedRoutes);
 app.use('/api/grafo', graphRoutes);
 app.use('/api/logs', logRoutes);
 
+export { emailLimiter };
+
 app.get('/', (req, res) => {
     res.json({ message: 'UTEQ Connect API' });
 });
+
 
 httpServer.listen(PORT, () => {
     console.log(`🚀 Servidor corriendo en http://localhost:${PORT}`);
