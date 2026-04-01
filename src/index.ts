@@ -39,7 +39,7 @@ io.on('connection', (socket) => {
 const PORT = process.env.PORT || 3000;
 
 const generalLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000,
+    windowMs: 1 * 60 * 1000, // cada 1 minuto
     max: 100,
     standardHeaders: true,
     legacyHeaders: false,
@@ -47,19 +47,19 @@ const generalLimiter = rateLimit({
 });
 
 const authLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000,
+    windowMs: 1 * 60 * 1000, // cada 1 minuto
     max: 10,
     standardHeaders: true,
     legacyHeaders: false,
-    message: { error: 'Demasiados intentos de autenticación, espera 15 minutos.' }
+    message: { error: 'Demasiados intentos de autenticación, espera 1 minuto.' }
 });
 
 const emailLimiter = rateLimit({
-    windowMs: 60 * 60 * 1000,
+    windowMs: 1 * 60 * 1000, // cada 1 minuto
     max: 5,
     standardHeaders: true,
     legacyHeaders: false,
-    message: { error: 'Demasiados envíos de correo, espera una hora.' }
+    message: { error: 'Demasiados envíos de correo, espera 1 minuto.' }
 });
 
 const uploadsDestinos = path.join(process.cwd(), 'uploads', 'destinos');
