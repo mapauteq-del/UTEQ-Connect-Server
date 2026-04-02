@@ -121,8 +121,8 @@ app.get('/', (req, res) => {
 
 
 httpServer.listen(PORT, () => {
-    console.log(`🚀 Servidor corriendo en http://localhost:${PORT}`);
-    console.log(`⏰ Tarea de desactivación automática de eventos: ACTIVA`);
+    console.log(` Servidor corriendo en http://localhost:${PORT}`);
+    console.log(` Tarea de desactivación automática de eventos: ACTIVA`);
 });
 
 export default app;
